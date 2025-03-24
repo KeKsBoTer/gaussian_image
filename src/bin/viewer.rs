@@ -1,7 +1,6 @@
 use std::{fs::File, path::PathBuf};
 
 use clap::{command, Parser};
-use gauss_img::start;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
