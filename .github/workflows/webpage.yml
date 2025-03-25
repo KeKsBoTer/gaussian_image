@@ -38,7 +38,7 @@ jobs:
           target: wasm32-unknown-unknown
       - name: Build
         run: |
-          cargo install wasm-bindgen-cli --version 0.2.93
+          cargo install wasm-bindgen-cli --version 0.2.100
           bash build_wasm.sh
           
       - name: Setup Pages

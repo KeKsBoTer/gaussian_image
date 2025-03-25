@@ -21,7 +21,7 @@ clap = { version = "4.5", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 
-wasm-bindgen = "0.2.93"
+wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.23"
 console_error_panic_hook = "0.1.7"
 console_log = "1"
