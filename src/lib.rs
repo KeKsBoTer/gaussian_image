@@ -96,8 +96,13 @@ impl eframe::App for GaussianImageApp {
                             );
                             ui.selectable_value(
                                 &mut self.settings.upscaling_method,
-                                gaussian::InterpolationMethod::Spline,
-                                gaussian::InterpolationMethod::Spline.to_string(),
+                                gaussian::InterpolationMethod::Spline3,
+                                gaussian::InterpolationMethod::Spline3.to_string(),
+                            );
+                            ui.selectable_value(
+                                &mut self.settings.upscaling_method,
+                                gaussian::InterpolationMethod::Spline5,
+                                gaussian::InterpolationMethod::Spline5.to_string(),
                             );
                         });
 
@@ -114,36 +119,34 @@ impl eframe::App for GaussianImageApp {
                     self.settings.clamp_image = clamp_image as u32;
 
                     ui.separator();
-                    if self.settings.upscaling_method == gaussian::InterpolationMethod::Spline {
+                    if self.settings.upscaling_method.is_spline() {
                         let mut clamp_gradients = self.settings.clamp_gradients != 0;
                         ui.checkbox(&mut clamp_gradients, "Clamp Gradients")
                             .on_hover_text("Clamp gradients to [-1,1] before interpolation");
                         self.settings.clamp_gradients = clamp_gradients as u32;
-
+                        
                         ui.separator();
+
+
+                        let grads_used = match self.settings.upscaling_method{
+                            gaussian::InterpolationMethod::Spline3 => 3,
+                            gaussian::InterpolationMethod::Spline5 => 8,
+                            _ => 0
+                        };
+                        let channel_names:Vec<&str> = [
+                            "Color","dx","dy","dxy","dxx","dyy","dxxy","dxyy","dxxyy"
+                        ].into_iter().take(grads_used+1).collect();
+
                         egui::ComboBox::new("channel select", "Channel")
-                            .selected_text(self.settings.channel.to_string())
+                            .selected_text(channel_names[self.settings.channel as usize].to_string())
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Color,
-                                    gaussian::Channel::Color.to_string(),
-                                );
-                                ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dx,
-                                    gaussian::Channel::Dx.to_string(),
-                                );
-                                ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dy,
-                                    gaussian::Channel::Dy.to_string(),
-                                );
-                                ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dxy,
-                                    gaussian::Channel::Dxy.to_string(),
-                                );
+                                for (i,name) in channel_names.iter().enumerate(){
+                                    ui.selectable_value(
+                                        &mut self.settings.channel,
+                                        i as u32,
+                                        name.to_string(),
+                                    );
+                                }
                             })
                             .response
                             .on_hover_text("Show channels used for spline interpolation");
@@ -151,8 +154,8 @@ impl eframe::App for GaussianImageApp {
                 });
             });
 
-        if self.settings.upscaling_method != gaussian::InterpolationMethod::Spline {
-            self.settings.channel = gaussian::Channel::Color;
+        if !self.settings.upscaling_method.is_spline() {
+            self.settings.channel = 0;
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
@@ -185,7 +188,7 @@ impl GaussianImageApp {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn start<R: Read + Seek>(file: R) {
-    use eframe::egui::ViewportBuilder;
+    use eframe::{egui::ViewportBuilder, egui_wgpu::WgpuConfiguration};
 
     let gaussian_image = GaussianImage::from_npz(file).unwrap();
     let native_options = eframe::NativeOptions {
@@ -193,6 +196,25 @@ pub async fn start<R: Read + Seek>(file: R) {
             gaussian_image.resolution[0] as f32,
             gaussian_image.resolution[1] as f32,
         )),
+        wgpu_options: WgpuConfiguration {
+            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew {
+                supported_backends: wgpu::Backends::PRIMARY,
+                power_preference: wgpu::PowerPreference::None,
+                device_descriptor: Arc::new(|adapter|{
+                    println!("Adapter: {:?}", adapter.get_info());
+                    wgpu::DeviceDescriptor {
+                        label: None,
+                        required_features: wgpu::Features::default(),
+                        required_limits: wgpu::Limits{
+                            max_color_attachment_bytes_per_sample: 64,
+                            ..Default::default()
+                        },
+                        memory_hints: wgpu::MemoryHints::MemoryUsage
+                    }
+                }),
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     eframe::run_native(

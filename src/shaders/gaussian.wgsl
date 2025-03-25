@@ -15,10 +15,13 @@ struct VertexOutput {
 };
 
 struct FragmentOutput {
-    @location(0) color: vec4<f32>,
-    @location(1) dx: vec4<f32>,
-    @location(2) dy: vec4<f32>,
-    @location(3) dxy: vec4<f32>,
+    @location(0) image_0: vec4<f32>,
+    @location(1) image_1: vec4<f32>,
+    @location(2) image_2: vec4<f32>,
+    @location(3) image_3: vec4<f32>,
+    @location(4) image_4: vec4<f32>,
+    @location(5) image_5: vec4<f32>,
+    @location(6) image_6: vec4<f32>,
 };
 
 struct Settings{
@@ -71,26 +74,56 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let c_d = cov[0][1];
 
     let dg_dx = (- c_a * x + c_b * y);
-    let dg_dy = (- c_b * x + c_c * y);
-    let dg_dxy = -c_b;
+    let dg_dy = (c_b * x - c_c * y);
+    let dg_dxy = c_b;
+    let dg_dxx = -c_a;
+    let dg_dyy = -c_c;
+
+    let dg_dxxy = 0.;
+    let dg_dxyy = 0.;
+    let dg_dxxyy = 0.;
 
     var alpha_dx = dg_dx * alpha;
     var alpha_dy = dg_dy * alpha;
     var alpha_dxy = (dg_dx * dg_dy+ dg_dxy ) * alpha;
+    var alpha_dxx = (dg_dx*dg_dx+dg_dxx)*alpha;
+    var alpha_dyy = (dg_dy*dg_dy+dg_dyy)*alpha;
+    var alpha_dxxy = (dg_dx*dg_dx*dg_dy+2.*dg_dx*dg_dxy+dg_dxx*dg_dy+dg_dxxy)*alpha;
+    var alpha_dxyy = (dg_dx*dg_dy*dg_dy+2.*dg_dy*dg_dxy+dg_dx*dg_dyy+dg_dxyy)*alpha;
+    var alpha_dxxyy = (dg_dx*dg_dx*dg_dy*dg_dy+dg_dx*dg_dx*dg_dyy+4.*dg_dx*dg_dy*dg_dxy+2.*dg_dx*dg_dxyy+dg_dxx*dg_dy*dg_dy+dg_dxx*dg_dyy+2*dg_dy*dg_dxxy+2*dg_dxy*dg_dxy+dg_dxxyy)*alpha;
 
     if alpha !=alpha_clamped{
         alpha_dx = 0.;
         alpha_dy = 0.;
         alpha_dxy = 0.;
+        alpha_dxx = 0.;
+        alpha_dyy = 0.;
+        alpha_dxxy = 0.;
+        alpha_dxyy = 0.;
+        alpha_dxxyy = 0.;
     }
 
     let color = in.color.rgb;
 
     var frag_out:FragmentOutput;
 
-    frag_out.color = vec4<f32>(color*alpha_clamped, 1.);
-    frag_out.dx = vec4<f32>(color*alpha_dx, 1.);
-    frag_out.dy = vec4<f32>(color*alpha_dy, 1.);
-    frag_out.dxy = vec4<f32>(color*alpha_dxy, 1.);
+    let color_c = color*alpha_clamped;
+    let dx = color*alpha_dx;
+    let dy = color*alpha_dy;
+    let dxy = color*alpha_dxy;
+    let dxx = color*alpha_dxx;
+    let dyy = color*alpha_dyy;
+    let dxxy = color*alpha_dxxy;
+    let dxyy = color*alpha_dxyy;
+    let dxxyy = color*alpha_dxxyy;
+
+    frag_out.image_0 = vec4<f32>(color_c,dx.r);
+    frag_out.image_1 = vec4<f32>(dx.gb,dy.rg);
+    frag_out.image_2 = vec4<f32>(dy.b,dxy.rgb);
+    frag_out.image_3 = vec4<f32>(dxx.rgb,dyy.r);
+    frag_out.image_4 = vec4<f32>(dyy.gb,dxxy.rg);
+    frag_out.image_5 = vec4<f32>(dxxy.b,dxyy.rgb);
+    frag_out.image_6 = vec4<f32>(dxxyy.rgb,0.);
+    
     return frag_out;
 }

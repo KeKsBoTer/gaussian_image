@@ -313,7 +313,7 @@ impl GaussianRasterizer {
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
                 entry_point: Some("fs_main"),
-                targets: &[
+                targets: &[0,1,2,3,4,5,6].map(|_|{
                     Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba16Float,
                         blend: Some(wgpu::BlendState {
@@ -322,47 +322,15 @@ impl GaussianRasterizer {
                                 dst_factor: wgpu::BlendFactor::One,
                                 operation: wgpu::BlendOperation::Add,
                             },
-                            alpha: wgpu::BlendComponent::REPLACE,
-                        }),
-                        write_mask: wgpu::ColorWrites::COLOR,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
+                            alpha: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::One,
                                 dst_factor: wgpu::BlendFactor::One,
                                 operation: wgpu::BlendOperation::Add,
                             },
-                            alpha: wgpu::BlendComponent::REPLACE,
                         }),
-                        write_mask: wgpu::ColorWrites::COLOR,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::One,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent::REPLACE,
-                        }),
-                        write_mask: wgpu::ColorWrites::COLOR,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::One,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent::REPLACE,
-                        }),
-                        write_mask: wgpu::ColorWrites::COLOR,
-                    }),
-                ],
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })
+                }),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -432,65 +400,28 @@ impl GaussianRasterizer {
         settings: &RasterizationSettings,
     ) {
         let tex_size = [
-            self.frame_buffer.color.size().width,
-            self.frame_buffer.color.size().height,
+            self.frame_buffer.textures[0].size().width,
+            self.frame_buffer.textures[0].size().height,
         ];
         if tex_size != resolution {
             self.frame_buffer.resize(device, resolution);
         }
 
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[*settings]));
-
+        
+        let views = self.frame_buffer.textures.as_ref().iter().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default())).collect::<Vec<_>>();
         {
             let mut render_pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Gaussian Rasterizer Render Pass"),
-                    color_attachments: &[
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self
-                                .frame_buffer
-                                .color
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self
-                                .frame_buffer
-                                .dx
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self
-                                .frame_buffer
-                                .dy
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self
-                                .frame_buffer
-                                .dxy
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                    ],
+                    color_attachments: &[0,1,2,3,4,5,6].map(|i|Some(wgpu::RenderPassColorAttachment {
+                        view: &views[i],
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })),
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
@@ -663,34 +594,20 @@ impl GaussianImage {
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
-pub enum Channel {
-    Color = 0,
-    Dx = 1,
-    Dy = 2,
-    Dxy = 3,
-}
-
-impl ToString for Channel {
-    fn to_string(&self) -> String {
-        match self {
-            Channel::Color => "Color".to_string(),
-            Channel::Dx => "dx".to_string(),
-            Channel::Dy => "dy".to_string(),
-            Channel::Dxy => "dxy".to_string(),
-        }
-    }
-}
-
-unsafe impl bytemuck::Pod for Channel {}
-unsafe impl bytemuck::Zeroable for Channel {}
-
-#[derive(Clone, Copy, PartialEq)]
-#[repr(u32)]
 pub enum InterpolationMethod {
     Nearest = 0,
     Bilinear = 1,
     Bicubic = 2,
-    Spline = 3,
+    Spline3 = 3,
+    Spline5 = 4,
+}
+impl InterpolationMethod {
+    pub(crate) fn is_spline(&self) -> bool {
+        match self {
+            InterpolationMethod::Spline3 | InterpolationMethod::Spline5 => true,
+            _ => false,
+        }
+    }
 }
 
 impl ToString for InterpolationMethod {
@@ -699,7 +616,8 @@ impl ToString for InterpolationMethod {
             InterpolationMethod::Nearest => "Nearest".to_string(),
             InterpolationMethod::Bilinear => "Bilinear".to_string(),
             InterpolationMethod::Bicubic => "Bicubic".to_string(),
-            InterpolationMethod::Spline => "Spline".to_string(),
+            InterpolationMethod::Spline3 => "Spline3".to_string(),
+            InterpolationMethod::Spline5 => "Spline5".to_string(),
         }
     }
 }
@@ -711,7 +629,7 @@ unsafe impl bytemuck::Zeroable for InterpolationMethod {}
 #[repr(C)]
 pub struct RasterizationSettings {
     pub scaling: f32,
-    pub channel: Channel,
+    pub channel: u32,
     pub upscale_factor: f32,
     pub upscaling_method: InterpolationMethod,
     pub clamp_gradients: u32,
@@ -723,9 +641,9 @@ impl Default for RasterizationSettings {
     fn default() -> Self {
         Self {
             scaling: 1.0,
-            channel: Channel::Color,
+            channel: 0,
             upscale_factor: 1.,
-            upscaling_method: InterpolationMethod::Spline,
+            upscaling_method: InterpolationMethod::Spline3,
             clamp_gradients: true as u32,
             clamp_image: true as u32,
             _padding: Default::default(),
@@ -734,10 +652,7 @@ impl Default for RasterizationSettings {
 }
 
 pub struct FrameBuffer {
-    pub color: wgpu::Texture,
-    pub dx: wgpu::Texture,
-    pub dy: wgpu::Texture,
-    pub dxy: wgpu::Texture,
+    pub textures: [wgpu::Texture; 7],
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -760,106 +675,46 @@ impl FrameBuffer {
                 view_formats: &[],
             })
         };
-
-        let color = create_texture("FrameBuffer Color Texture");
-        let dx = create_texture("FrameBuffer Dx Texture");
-        let dy = create_texture("FrameBuffer Dy Texture");
-        let dxy = create_texture("FrameBuffer Dxy Texture");
+        let textures =[0,1,2,3,4,5,6].map(|i| create_texture(&format!("FrameBuffer Texture {i}")));
+        let views:Vec<wgpu::TextureView> = textures.as_ref().iter().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default())).collect();
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("FrameBuffer Bind Group"),
             layout: &Self::bind_group_layout(device),
-            entries: &[
+            entries: &[0,1,2,3,4,5,6].map(|i|
                 wgpu::BindGroupEntry {
-                    binding: 0,
+                    binding: i as u32,
                     resource: wgpu::BindingResource::TextureView(
-                        &color.create_view(&wgpu::TextureViewDescriptor::default()),
+                        &views[i],
                     ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &dx.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &dy.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(
-                        &dxy.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-            ],
+                }),
         });
 
         return Self {
-            color,
-            dx,
-            dy,
-            dxy,
+            textures,
             bind_group,
         };
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, resolution: [u32; 2]) {
         let new = Self::new(device, resolution);
-        self.color = new.color;
-        self.dx = new.dx;
-        self.dy = new.dy;
-        self.dxy = new.dxy;
+        self.textures = new.textures;
         self.bind_group = new.bind_group;
     }
 
     pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("FrameBuffer Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
+            entries: &[0,1,2,3,4,5,6].map(|i|wgpu::BindGroupLayoutEntry {
+                binding: i,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
+                count: None,
+            },)
         })
     }
 }
