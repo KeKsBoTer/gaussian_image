@@ -76,11 +76,13 @@ def gen_dataset_thumbnails(name,description,link,root_dir):
             else:
                 size = f"{size / (1024 * 1024):.2f} MB"
 
+            base_dir = os.path.relpath(file_dir, file_dir.split("/")[0])
+
             body += f"""
             <div class="card">
                 <p class="name">{folder}</p>
-                <a href="http://127.0.0.1:5500/public/viewer.html?file=http://127.0.0.1:5500/{os.path.join(file_dir,"model_f16.npz")}">
-                    <div class="image" style="background-image: url(/{os.path.join(file_dir,'thumbnail.jpeg')})"></div>
+                <a href="viewer.html?file={os.path.join(base_dir,"model_f16.npz")}">
+                    <div class="image" style="background-image: url({os.path.join(base_dir,'thumbnail.jpeg')})"></div>
                 </a>
                 <p class="info">{size}<br> {n_gaussians//1000}k Gauss.<br>{orig_resolution}</p>
             </div>
