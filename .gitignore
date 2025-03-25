@@ -1,1 +1,8 @@
 /target
+
+
+public/gaussian_images/**/*.txt
+public/gaussian_images/**/*.npy
+public/gaussian_images/**/*.png
+public/gaussian_images/**/*.pth.tar
+public/gaussian_images/**/model.npz

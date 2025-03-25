@@ -32,7 +32,7 @@ struct VertexOut {
 struct Settings{
     scale_factor:f32,
     channel:u32,
-    upscale_factor:u32,
+    upscale_factor:f32,
     upscaling_method:u32,
     clamp_gradients:u32,
     clamp_image:u32,
@@ -99,12 +99,12 @@ fn fs_main(vertex_in: VertexOut) -> @location(0) vec4<f32>
 
 
 fn textureSize(tex: texture_2d<f32>) -> vec2<f32> {
-    return vec2<f32>(textureDimensions(tex,0))/f32(settings.upscale_factor);
+    return vec2<f32>(textureDimensions(tex,0))/settings.upscale_factor;
 }
 
 fn textureLoad_scaled(tex: texture_2d<f32>, pos: vec2<i32>) -> vec4<f32> {
     return textureLoad(tex, 
-        clamp(pos*vec2<i32>(settings.upscale_factor), vec2<i32>(0), vec2<i32>(textureDimensions(tex)-1))
+        clamp(vec2<i32>(vec2<f32>(pos)*settings.upscale_factor), vec2<i32>(0), vec2<i32>(textureDimensions(tex)-1))
     , 0);
 }
 
@@ -149,13 +149,13 @@ fn sample_spline(pos_in:vec2<f32>)->vec4<f32>{
 
     for (var i = 0; i < 2; i++) {
         for (var j = 0; j < 2; j++) {
-            let sample_pos = clamp(pixel_pos + vec2<i32>(i, j), vec2<i32>(0), vec2<i32>(tex_size-1));
+            let sample_pos = pixel_pos + vec2<i32>(i, j);
 
-            let s = 0.5*f32(settings.upscale_factor);
+            let s = 1.*settings.upscale_factor;
             var z_v = textureLoad_scaled(source_img, sample_pos);
             var dx_v = textureLoad_scaled(image_dx, sample_pos)*s;
             var dy_v = textureLoad_scaled(image_dy, sample_pos)*s;
-            var dxy_v = textureLoad_scaled(image_dxy, sample_pos)*s;
+            var dxy_v = textureLoad_scaled(image_dxy, sample_pos)*s*s;
 
             if bool(settings.clamp_gradients){
                 dx_v = clamp(dx_v, vec4<f32>(-1.), vec4<f32>(1.));

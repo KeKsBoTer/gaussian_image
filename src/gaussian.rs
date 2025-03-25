@@ -3,7 +3,13 @@ use std::{
     sync::Arc,
 };
 
-use eframe::{egui, egui_wgpu};
+use eframe::{
+    egui::{self, mutex::Mutex},
+    egui_wgpu,
+};
+use half::f16;
+use npyz::{Deserialize, TypeChar, TypeStr, npz::NpzArchive};
+use num_traits::Float;
 use wgpu::{VertexAttribute, include_wgsl, util::DeviceExt};
 
 pub struct Gauss2D {
@@ -42,10 +48,12 @@ impl Gauss2D {
     fn vertices(&self, resolution: [u32; 2]) -> Option<[GaussianVertex; 6]> {
         let mu = self.mean;
 
-        // let scale_x =2.*self.scale[0]/resolution[0] as f32;
-        // let scale_y =2.*self.scale[1]/resolution[1] as f32;
         let scale_x = self.scale[0];
         let scale_y = self.scale[1];
+
+        if scale_x.min(scale_y) <= 0.3 {
+            return None;
+        }
 
         let cov = build_covariance_matrix(self.rotation, [scale_x, scale_y]);
 
@@ -144,10 +152,15 @@ impl Gauss2D {
 pub struct GaussianMixture {
     num_vertices: usize,
     buffer: wgpu::Buffer,
+    pub resolution: [u32; 2],
 }
 
 impl GaussianMixture {
-    pub fn new(device: &wgpu::Device, gaussian_image: &GaussianImage) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        gaussian_image: &GaussianImage,
+        resolution: [u32; 2],
+    ) -> Self {
         let vertices: Vec<GaussianVertex> = gaussian_image
             .gaussians
             .iter()
@@ -172,11 +185,15 @@ impl GaussianMixture {
         Self {
             buffer,
             num_vertices,
+            resolution,
         }
     }
 
     pub fn num_vertices(&self) -> usize {
         self.num_vertices
+    }
+    pub fn len(&self) -> usize {
+        self.num_vertices / 6
     }
 }
 
@@ -191,7 +208,7 @@ impl egui_wgpu::CallbackTrait for GaussianMixtureCallBack {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
         _egui_encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
@@ -199,13 +216,13 @@ impl egui_wgpu::CallbackTrait for GaussianMixtureCallBack {
             label: Some("Gaussian Rasterizer Command Encoder"),
         });
         let renderer: &mut GaussianRasterizer = resources.get_mut().unwrap();
-
+        let resolution = renderer.resolution.lock().clone();
         renderer.prepare(
             device,
             queue,
             &mut encoder,
             self.gaussians.as_ref(),
-            screen_descriptor.size_in_pixels,
+            resolution,
             &self.settings,
         );
         vec![encoder.finish()]
@@ -213,11 +230,16 @@ impl egui_wgpu::CallbackTrait for GaussianMixtureCallBack {
 
     fn paint(
         &self,
-        _info: egui::PaintCallbackInfo,
+        info: egui::PaintCallbackInfo,
         render_pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
         let resources: &GaussianRasterizer = resources.get().unwrap();
+        let size = [
+            info.viewport_in_pixels().width_px as u32,
+            info.viewport_in_pixels().height_px as u32,
+        ];
+        resources.resolution.lock().copy_from_slice(&size);
         resources.render(render_pass);
     }
 }
@@ -228,6 +250,7 @@ pub struct GaussianRasterizer {
     uniform_buffer: wgpu::Buffer,
     display_pipeline: wgpu::RenderPipeline,
     frame_buffer: FrameBuffer,
+    resolution: Mutex<[u32; 2]>,
 }
 
 impl GaussianRasterizer {
@@ -356,10 +379,7 @@ impl GaussianRasterizer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Gaussian Display Pipeline Layout"),
-            bind_group_layouts: &[
-                &bg_layout,
-                &FrameBuffer::bind_group_layout(device)
-            ],
+            bind_group_layouts: &[&bg_layout, &FrameBuffer::bind_group_layout(device)],
             push_constant_ranges: &[],
         });
 
@@ -398,6 +418,7 @@ impl GaussianRasterizer {
             display_pipeline,
             frame_buffer,
             uniform_buffer,
+            resolution: Mutex::new(resolution),
         }
     }
 
@@ -552,11 +573,37 @@ pub struct GaussianImage {
 impl GaussianImage {
     pub fn from_npz<R: Read + Seek>(file: R) -> anyhow::Result<Self> {
         let mut reader = npyz::npz::NpzArchive::new(file)?;
+        let dtype =reader.by_name("xyz")?.unwrap().dtype().clone();
+        match dtype {
+            npyz::DType::Plain(type_str) => {
+                if type_str.type_char() != TypeChar::Float {
+                    return Err(anyhow::anyhow!("data must be float"));
+                }
+                match type_str.num_bytes().unwrap() {
+                    2 => return Self::from_npz_dyn::<_, f16>(reader),
+                    4 => return Self::from_npz_dyn::<_, f32>(reader),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "unsupported float size: {}",
+                            type_str.num_bytes().unwrap()
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(anyhow::anyhow!("data must be float"));
+            }
+        }
+    }
+
+    fn from_npz_dyn<R: Read + Seek, F: Float + Deserialize>(
+        mut reader: NpzArchive<R>,
+    ) -> anyhow::Result<Self> {
         let xyz_data = reader
             .by_name("xyz")?
             .ok_or(anyhow::anyhow!("xyz not found"))?;
         let xyz = xyz_data
-            .into_vec::<f32>()?
+            .into_vec::<F>()?
             .chunks_exact(2)
             .map(|c| [c[0], c[1]])
             .collect::<Vec<_>>();
@@ -565,7 +612,7 @@ impl GaussianImage {
             .by_name("color")?
             .ok_or(anyhow::anyhow!("color not found"))?;
         let color = color_data
-            .into_vec::<f32>()?
+            .into_vec::<F>()?
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
             .collect::<Vec<_>>();
@@ -574,7 +621,7 @@ impl GaussianImage {
             .by_name("scaling")?
             .ok_or(anyhow::anyhow!("scaling not found"))?;
         let scaling = scaling_data
-            .into_vec::<f32>()?
+            .into_vec::<F>()?
             .chunks_exact(2)
             .map(|c| [c[0], c[1]])
             .collect::<Vec<_>>();
@@ -582,7 +629,7 @@ impl GaussianImage {
         let rotation_data = reader
             .by_name("rotation")?
             .ok_or(anyhow::anyhow!("rotation not found"))?;
-        let rotation = rotation_data.into_vec::<f32>()?;
+        let rotation = rotation_data.into_vec::<F>()?;
 
         let resolution_data = reader
             .by_name("resolution")?
@@ -595,21 +642,26 @@ impl GaussianImage {
             .zip(color.iter())
             .zip(scaling.iter().zip(rotation.iter()))
             .map(|((mean, color), (scaling, rotation))| Gauss2D {
-                mean: [mean[0], mean[1]],
-                color: [color[0], color[1], color[2], 1.0],
-                rotation: *rotation,
-                scale: [scaling[0], scaling[1]],
+                mean: [mean[0].to_f32().unwrap(), mean[1].to_f32().unwrap()],
+                color: [
+                    color[0].to_f32().unwrap(),
+                    color[1].to_f32().unwrap(),
+                    color[2].to_f32().unwrap(),
+                    1.0,
+                ],
+                rotation: rotation.to_f32().unwrap(),
+                scale: [scaling[0].to_f32().unwrap(), scaling[1].to_f32().unwrap()],
             })
             .collect::<Vec<_>>();
 
         return Ok(Self {
             gaussians,
-            resolution,
+            resolution: [resolution[0] as u32, resolution[1] as u32],
         });
     }
 }
 
-#[derive(Clone, Copy,PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
 pub enum Channel {
     Color = 0,
@@ -632,7 +684,7 @@ impl ToString for Channel {
 unsafe impl bytemuck::Pod for Channel {}
 unsafe impl bytemuck::Zeroable for Channel {}
 
-#[derive(Clone, Copy,PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
 pub enum InterpolationMethod {
     Nearest = 0,
@@ -660,11 +712,11 @@ unsafe impl bytemuck::Zeroable for InterpolationMethod {}
 pub struct RasterizationSettings {
     pub scaling: f32,
     pub channel: Channel,
-    pub upscale_factor: u32,
-    pub upscaling_method:InterpolationMethod,
-    pub clamp_gradients:u32,
-    pub clamp_image:u32,
-    _padding: [u32; 2],
+    pub upscale_factor: f32,
+    pub upscaling_method: InterpolationMethod,
+    pub clamp_gradients: u32,
+    pub clamp_image: u32,
+    pub _padding: [u32; 2],
 }
 
 impl Default for RasterizationSettings {
@@ -672,10 +724,10 @@ impl Default for RasterizationSettings {
         Self {
             scaling: 1.0,
             channel: Channel::Color,
-            upscale_factor: 1,
-            upscaling_method:InterpolationMethod::Spline,
-            clamp_gradients:true as u32,
-            clamp_image:true as u32,
+            upscale_factor: 1.,
+            upscaling_method: InterpolationMethod::Spline,
+            clamp_gradients: true as u32,
+            clamp_image: true as u32,
             _padding: Default::default(),
         }
     }

@@ -24,7 +24,7 @@ struct FragmentOutput {
 struct Settings{
     scale_factor:f32,
     channel:u32,
-    upscale_factor:u32,
+    upscale_factor:f32,
     upscaling_method:u32,
     clamp_gradients:u32,
     clamp_image:u32,
@@ -83,12 +83,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         alpha_dy = 0.;
         alpha_dxy = 0.;
     }
-
-    // alpha_dx = dpdxFine(alpha_clamped);
-    // alpha_dy = dpdyFine(alpha_clamped);
-    // alpha_dxy = dpdxFine(alpha_dy);
-
-
 
     let color = in.color.rgb;
 
