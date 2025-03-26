@@ -38,6 +38,9 @@ impl WebHandle {
         let url =web_sys::UrlSearchParams::new_with_str(&search_string)?.get("file").ok_or(JsError::new("file parameter not found"))?;
         let request = ehttp::Request::get(url);
         let resp = ehttp::fetch_async(request).await?;
+        if resp.status != 200 {
+            return Err(JsError::new(format!("failed to load '{}'. {} ({})",resp.url,resp.status_text, resp.status).as_str()).into());
+        }
         let reader = Cursor::new(resp.bytes);
 
         let gaussian_image = GaussianImage::from_npz(reader).map_err(|e| e.to_string())?;
