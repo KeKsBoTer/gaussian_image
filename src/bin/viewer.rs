@@ -14,7 +14,10 @@ struct Opt {
 #[pollster::main]
 async fn main() {
     let opt = Opt::parse();
-    let file = File::open(opt.input).unwrap();
+    env_logger::Builder::from_default_env().filter_module("gauss_img",log::LevelFilter::Warn).init();
+    log::warn!("{}",env!("CARGO_PKG_NAME"));
+    
+    let file = File::open(opt.input).expect("Failed to open file");
     let buff_reader = std::io::BufReader::new(file);
     start(buff_reader).await;
 }

@@ -19,8 +19,14 @@ struct GaussianImageApp {
 }
 
 impl GaussianImageApp {
-    fn new(cc: &eframe::CreationContext<'_>, gaussian_image: GaussianImage) -> Self {
-        let wgpu_state = cc.wgpu_render_state.as_ref().unwrap();
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        gaussian_image: GaussianImage,
+    ) -> anyhow::Result<Self> {
+        let wgpu_state = cc
+            .wgpu_render_state
+            .as_ref()
+            .ok_or(anyhow::anyhow!("WGPU not available"))?;
 
         let device = &wgpu_state.device;
 
@@ -34,24 +40,27 @@ impl GaussianImageApp {
             .callback_resources
             .insert(rasterizer);
 
-        Self {
+        Ok(Self {
             gaussians: Arc::new(model),
             settings: RasterizationSettings {
                 scaling: 0.,
                 ..Default::default()
             },
-        }
+        })
     }
 }
 
 impl eframe::App for GaussianImageApp {
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.settings.scaling += (1. - self.settings.scaling) / 16.;
         if self.settings.scaling < 1. {
             ctx.request_repaint_after_secs(1. / 60.0);
         }
-        egui::TopBottomPanel::top("top_panel").resizable(false).show(ctx, |ui| {
-            ui.horizontal(|ui| {
+        egui::TopBottomPanel::top("top_panel")
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
                     ui.horizontal(|ui| {
                         ui.label("ℹ")
                             .on_hover_cursor(egui::CursorIcon::Help)
@@ -161,7 +170,7 @@ impl eframe::App for GaussianImageApp {
                                         ui.add(egui::Hyperlink::from_label_and_url(
                                             format!("{}", egui::special_emojis::GITHUB),
                                             "https://github.com/KeKsBoTer/gaussian_image",
-                                        ))
+                                        ).open_in_new_tab(true))
                                         .on_hover_text("Source Code");
                                         ui.separator();
                                     },
@@ -177,9 +186,8 @@ impl eframe::App for GaussianImageApp {
                         ))
                         .on_hover_text("Source Code");
                     });
-                },
-            );
-        });
+                });
+            });
 
         if self.settings.upscaling_method != gaussian::InterpolationMethod::Spline {
             self.settings.channel = gaussian::Channel::Color;
@@ -223,14 +231,21 @@ pub async fn start<R: Read + Seek>(file: R) {
             gaussian_image.resolution[0] as f32,
             gaussian_image.resolution[1] as f32,
         )),
+        window_builder: Some(Box::new(|b| {
+            b.with_icon(Arc::new(
+                eframe::icon_data::from_png_bytes(include_bytes!("../img/icon.png")).unwrap(),
+            ))
+        })),
         ..Default::default()
     };
-    eframe::run_native(
+    let ret = eframe::run_native(
         &format!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
         native_options,
-        Box::new(|cc| Ok(Box::new(GaussianImageApp::new(cc, gaussian_image)))),
-    )
-    .unwrap();
+        Box::new(|cc| Ok(Box::new(GaussianImageApp::new(cc, gaussian_image).unwrap()))),
+    );
+    if let Err(e) = ret {
+        log::error!("Error running viewer: {}", e);
+    }
 }
 
 fn fit_rect(bounds: Vec2, aspect_ratio: f32) -> Vec2 {

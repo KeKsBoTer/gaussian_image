@@ -46,7 +46,7 @@ impl WebHandle {
             .start(
                 canvas,
                 WebOptions::default(),
-                Box::new(|cc| Ok(Box::new(GaussianImageApp::new(cc, gaussian_image)))),
+                Box::new(|cc| Ok(Box::new(GaussianImageApp::new(cc, gaussian_image).unwrap()))),
             )
             .await
     }

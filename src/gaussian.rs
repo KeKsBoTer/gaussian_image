@@ -106,7 +106,7 @@ impl Gauss2D {
         if cov_inv.is_none() {
             return None;
         }
-        let cov_inv = cov_inv.unwrap();
+        let cov_inv = cov_inv?;
         let cov_plain = [cov_inv[0][0], cov_inv[0][1], cov_inv[1][0], cov_inv[1][1]];
         Some([
             GaussianVertex {
@@ -170,8 +170,8 @@ impl GaussianMixture {
         let num_vertices = vertices.len();
         let skipped = gaussian_image.gaussians.len() - num_vertices / 6;
         if skipped > 0 {
-            println!(
-                "WARN: {} gaussians were skipped because they are invalid.",
+            log::warn!(
+                "{} gaussians were skipped because they are invalid.",
                 skipped
             );
         }
@@ -217,6 +217,8 @@ impl egui_wgpu::CallbackTrait for GaussianMixtureCallBack {
         });
         let renderer: &mut GaussianRasterizer = resources.get_mut().unwrap();
         let resolution = renderer.resolution.lock().clone();
+
+
         renderer.prepare(
             device,
             queue,
@@ -573,13 +575,13 @@ pub struct GaussianImage {
 impl GaussianImage {
     pub fn from_npz<R: Read + Seek>(file: R) -> anyhow::Result<Self> {
         let mut reader = npyz::npz::NpzArchive::new(file)?;
-        let dtype =reader.by_name("xyz")?.unwrap().dtype().clone();
+        let dtype =reader.by_name("xyz")?.ok_or(anyhow::format_err!("missing field xyz"))?.dtype().clone();
         match dtype {
             npyz::DType::Plain(type_str) => {
                 if type_str.type_char() != TypeChar::Float {
                     return Err(anyhow::anyhow!("data must be float"));
                 }
-                match type_str.num_bytes().unwrap() {
+                match type_str.num_bytes().ok_or(anyhow::anyhow!("cannot read num_bytes for datatype"))? {
                     2 => return Self::from_npz_dyn::<_, f16>(reader),
                     4 => return Self::from_npz_dyn::<_, f32>(reader),
                     _ => {
