@@ -8,7 +8,7 @@ use eframe::{
     egui_wgpu,
 };
 use half::f16;
-use npyz::{Deserialize, TypeChar, TypeStr, npz::NpzArchive};
+use npyz::{Deserialize, TypeChar, npz::NpzArchive};
 use num_traits::Float;
 use wgpu::{VertexAttribute, include_wgsl, util::DeviceExt};
 

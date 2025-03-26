@@ -50,106 +50,136 @@ impl eframe::App for GaussianImageApp {
         if self.settings.scaling < 1. {
             ctx.request_repaint_after_secs(1. / 60.0);
         }
-        egui::TopBottomPanel::top("top_panel")
-            .default_height(30.)
-            .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.label("ℹ")
-                        .on_hover_cursor(egui::CursorIcon::Help)
-                        .on_hover_ui(|ui| {
-                            ui.heading("Gaussian Image Info");
-                            egui::Grid::new("info grid").show(ui, |ui| {
-                                ui.label("Num Gaussians");
-                                ui.label(self.gaussians.len().to_string());
-                                ui.end_row();
-                                ui.label("Training Image Resolution");
-                                ui.label(format!(
-                                    "{}x{}",
-                                    self.gaussians.resolution[0], self.gaussians.resolution[1]
-                                ));
-                                ui.end_row();
+        egui::TopBottomPanel::top("top_panel").resizable(false).show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("ℹ")
+                            .on_hover_cursor(egui::CursorIcon::Help)
+                            .on_hover_ui(|ui| {
+                                ui.heading("Gaussian Image Info");
+                                egui::Grid::new("info grid").show(ui, |ui| {
+                                    ui.label("Num Gaussians");
+                                    ui.label(self.gaussians.len().to_string());
+                                    ui.end_row();
+                                    ui.label("Training Image Resolution");
+                                    ui.label(format!(
+                                        "{}x{}",
+                                        self.gaussians.resolution[0], self.gaussians.resolution[1]
+                                    ));
+                                    ui.end_row();
+                                });
                             });
-                        });
-                    ui.label("Gaussian Image Upscaling");
-                    ui.separator();
-                    // ui.add(
-                    //     egui::Slider::new(&mut self.settings.scaling, (0.1)..=(1.))
-                    //         .text("Gaussian Scaling"),
-                    // );
-                    egui::ComboBox::new("method select", "Upscaling Method")
-                        .selected_text(self.settings.upscaling_method.to_string())
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.settings.upscaling_method,
-                                gaussian::InterpolationMethod::Nearest,
-                                gaussian::InterpolationMethod::Nearest.to_string(),
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.upscaling_method,
-                                gaussian::InterpolationMethod::Bilinear,
-                                gaussian::InterpolationMethod::Bilinear.to_string(),
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.upscaling_method,
-                                gaussian::InterpolationMethod::Bicubic,
-                                gaussian::InterpolationMethod::Bicubic.to_string(),
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.upscaling_method,
-                                gaussian::InterpolationMethod::Spline,
-                                gaussian::InterpolationMethod::Spline.to_string(),
-                            );
-                        });
-
-                    ui.separator();
-                    ui.add(
-                        egui::Slider::new(&mut self.settings.upscale_factor, (1.)..=(8.))
-                            .text("Upscale Factor"),
-                    );
-
-                    ui.separator();
-                    let mut clamp_image = self.settings.clamp_image != 0;
-                    ui.checkbox(&mut clamp_image, "Clamp Color")
-                        .on_hover_text("Clamp color to [0,1] before interpolation");
-                    self.settings.clamp_image = clamp_image as u32;
-
-                    ui.separator();
-                    if self.settings.upscaling_method == gaussian::InterpolationMethod::Spline {
-                        let mut clamp_gradients = self.settings.clamp_gradients != 0;
-                        ui.checkbox(&mut clamp_gradients, "Clamp Gradients")
-                            .on_hover_text("Clamp gradients to [-1,1] before interpolation");
-                        self.settings.clamp_gradients = clamp_gradients as u32;
-
-                        ui.separator();
-                        egui::ComboBox::new("channel select", "Channel")
-                            .selected_text(self.settings.channel.to_string())
+                        ui.label("Gaussian Image");
+                    });
+                    // ui.separator();
+                    ui.horizontal_wrapped(|ui| {
+                        egui::ComboBox::new("method select", "Method")
+                            .selected_text(self.settings.upscaling_method.to_string())
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Color,
-                                    gaussian::Channel::Color.to_string(),
+                                    &mut self.settings.upscaling_method,
+                                    gaussian::InterpolationMethod::Nearest,
+                                    gaussian::InterpolationMethod::Nearest.to_string(),
                                 );
                                 ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dx,
-                                    gaussian::Channel::Dx.to_string(),
+                                    &mut self.settings.upscaling_method,
+                                    gaussian::InterpolationMethod::Bilinear,
+                                    gaussian::InterpolationMethod::Bilinear.to_string(),
                                 );
                                 ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dy,
-                                    gaussian::Channel::Dy.to_string(),
+                                    &mut self.settings.upscaling_method,
+                                    gaussian::InterpolationMethod::Bicubic,
+                                    gaussian::InterpolationMethod::Bicubic.to_string(),
                                 );
                                 ui.selectable_value(
-                                    &mut self.settings.channel,
-                                    gaussian::Channel::Dxy,
-                                    gaussian::Channel::Dxy.to_string(),
+                                    &mut self.settings.upscaling_method,
+                                    gaussian::InterpolationMethod::Spline,
+                                    gaussian::InterpolationMethod::Spline.to_string(),
                                 );
-                            })
-                            .response
-                            .on_hover_text("Show channels used for spline interpolation");
-                    }
-                });
-            });
+                            });
+
+                        ui.separator();
+                        ui.add(
+                            egui::Slider::new(&mut self.settings.upscale_factor, (1.)..=(8.))
+                                .text("Factor"),
+                        );
+
+                        #[cfg(debug_assertions)]
+                        {
+                            ui.separator();
+                            let mut clamp_image = self.settings.clamp_image != 0;
+                            ui.checkbox(&mut clamp_image, "Clamp Color")
+                                .on_hover_text("Clamp color to [0,1] before interpolation");
+                            self.settings.clamp_image = clamp_image as u32;
+                        }
+                        ui.separator();
+                        if self.settings.upscaling_method == gaussian::InterpolationMethod::Spline {
+                            #[cfg(debug_assertions)]
+                            {
+                                let mut clamp_gradients = self.settings.clamp_gradients != 0;
+                                ui.checkbox(&mut clamp_gradients, "Clamp Gradients")
+                                    .on_hover_text(
+                                        "Clamp gradients to [-1,1] before interpolation",
+                                    );
+                                self.settings.clamp_gradients = clamp_gradients as u32;
+
+                                ui.separator();
+                            }
+                            egui::ComboBox::new("channel select", "Channel")
+                                .selected_text(self.settings.channel.to_string())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.settings.channel,
+                                        gaussian::Channel::Color,
+                                        gaussian::Channel::Color.to_string(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.settings.channel,
+                                        gaussian::Channel::Dx,
+                                        gaussian::Channel::Dx.to_string(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.settings.channel,
+                                        gaussian::Channel::Dy,
+                                        gaussian::Channel::Dy.to_string(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.settings.channel,
+                                        gaussian::Channel::Dxy,
+                                        gaussian::Channel::Dxy.to_string(),
+                                    );
+                                })
+                                .response
+                                .on_hover_text("Show channels used for spline interpolation");
+                        }
+                        ui.with_layout(
+                            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                            |ui| {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.add(egui::Hyperlink::from_label_and_url(
+                                            format!("{}", egui::special_emojis::GITHUB),
+                                            "https://github.com/KeKsBoTer/gaussian_image",
+                                        ))
+                                        .on_hover_text("Source Code");
+                                        ui.separator();
+                                    },
+                                );
+                            },
+                        );
+                    });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Hyperlink::from_label_and_url(
+                            format!("{}", egui::special_emojis::GITHUB),
+                            "https://github.com/KeKsBoTer/gaussian_image",
+                        ))
+                        .on_hover_text("Source Code");
+                    });
+                },
+            );
+        });
 
         if self.settings.upscaling_method != gaussian::InterpolationMethod::Spline {
             self.settings.channel = gaussian::Channel::Color;
